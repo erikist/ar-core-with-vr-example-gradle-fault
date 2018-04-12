@@ -145,6 +145,7 @@ public class BackgroundRenderer {
         GLES20.glDisable(GLES20.GL_DEPTH_TEST);
         GLES20.glDepthMask(false);
 
+        //TODO use this textureId
         GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, mTextureId);
 
         GLES20.glUseProgram(mQuadProgram);

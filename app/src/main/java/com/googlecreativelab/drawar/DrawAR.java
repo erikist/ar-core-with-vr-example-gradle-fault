@@ -16,7 +16,6 @@
 
 package com.googlecreativelab.drawar;
 
-import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -25,7 +24,6 @@ import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.opengl.Matrix;
 import android.os.Bundle;
-import android.support.design.widget.BaseTransientBottomBar;
 import android.support.design.widget.Snackbar;
 import android.support.v4.view.GestureDetectorCompat;
 import android.support.v7.app.AppCompatActivity;
@@ -34,7 +32,6 @@ import android.util.Log;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
-import android.view.ViewTreeObserver;
 import android.view.WindowManager;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
@@ -47,6 +44,7 @@ import com.google.ar.core.Config;
 import com.google.ar.core.Frame;
 import com.google.ar.core.Session;
 import com.google.ar.core.TrackingState;
+import com.google.ar.core.exceptions.CameraNotAvailableException;
 import com.google.ar.core.exceptions.UnavailableApkTooOldException;
 import com.google.ar.core.exceptions.UnavailableArcoreNotInstalledException;
 import com.google.ar.core.exceptions.UnavailableSdkTooOldException;
@@ -74,28 +72,28 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
         GestureDetector.OnDoubleTapListener{
     private static final String TAG = DrawAR.class.getSimpleName();
 
-    private GLSurfaceView mSurfaceView;
+    private GLSurfaceView surfaceView;
 
     private Config mDefaultConfig;
-    private Session mSession;
-    private BackgroundRenderer mBackgroundRenderer = new BackgroundRenderer();
-    private LineShaderRenderer mLineShaderRenderer = new LineShaderRenderer();
-    private Frame mFrame;
+    private Session session;
+    private BackgroundRenderer backgroundRenderer = new BackgroundRenderer();
+    private LineShaderRenderer lineShaderRenderer = new LineShaderRenderer();
+    private Frame frame;
 
-    private float[] projmtx = new float[16];
-    private float[] viewmtx = new float[16];
-    private float[] mZeroMatrix = new float[16];
+    private float[] projectionMatrix = new float[16];
+    private float[] viewMatrix = new float[16];
+    private float[] zeroMatrix = new float[16];
 
-    private boolean mPaused = false;
+    private boolean isPaused = false;
 
-    private float mScreenWidth = 0;
-    private float mScreenHeight = 0;
+    private float screenWidth = 0;
+    private float screenHeight = 0;
 
     private BiquadFilter biquadFilter;
-    private Vector3f mLastPoint;
+    private Vector3f lastPoint;
     private AtomicReference<Vector2f> lastTouch = new AtomicReference<>();
 
-    private GestureDetectorCompat mDetector;
+    private GestureDetectorCompat gestureDetector;
 
     private LinearLayout mSettingsUI;
     private LinearLayout mButtonBar;
@@ -105,28 +103,28 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
     private SeekBar mSmoothingBar;
 
 
-    private float mLineWidthMax = 0.33f;
-    private float mDistanceScale = 0.0f;
-    private float mLineSmoothing = 0.1f;
+    private float lineWidth = 0.33f;
+    private float distanceScale = 0.0f;
+    private float lineSmoothing = 0.1f;
 
-    private float[] mLastFramePosition;
+    private float[] lastFramePosition;
 
-    private AtomicBoolean bIsTracking = new AtomicBoolean(true);
-    private AtomicBoolean bReCenterView = new AtomicBoolean(false);
-    private AtomicBoolean bTouchDown = new AtomicBoolean(false);
-    private AtomicBoolean bClearDrawing = new AtomicBoolean(false);
-    private AtomicBoolean bLineParameters = new AtomicBoolean(false);
-    private AtomicBoolean bUndo = new AtomicBoolean(false);
-    private AtomicBoolean bNewStroke = new AtomicBoolean(false);
+    private AtomicBoolean isTracking = new AtomicBoolean(true);
+    private AtomicBoolean recenterView = new AtomicBoolean(false);
+    private AtomicBoolean isTouchDown = new AtomicBoolean(false);
+    private AtomicBoolean shouldClearDrawing = new AtomicBoolean(false);
+    private AtomicBoolean lineParameters = new AtomicBoolean(false);
+    private AtomicBoolean undo = new AtomicBoolean(false);
+    private AtomicBoolean newStroke = new AtomicBoolean(false);
 
-    private ArrayList<ArrayList<Vector3f>> mStrokes;
+    private ArrayList<ArrayList<Vector3f>> strokes;
 
-    private DisplayRotationHelper mDisplayRotationHelper;
+    private DisplayRotationHelper displayRotationHelper;
     private Snackbar mMessageSnackbar;
 
-    private boolean bInstallRequested;
+    private boolean installRequested;
 
-    private TrackingState mState;
+    private TrackingState trackingState;
     /**
      * Setup the app when main activity is created
      */
@@ -137,7 +135,7 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
 
         setContentView(R.layout.activity_main);
 
-        mSurfaceView = findViewById(R.id.surfaceview);
+        surfaceView = findViewById(R.id.surfaceview);
         mSettingsUI = findViewById(R.id.strokeUI);
         mButtonBar = findViewById(R.id.button_bar);
 
@@ -150,9 +148,9 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
         mLineWidthBar.setProgress(sharedPref.getInt("mLineWidth", 10));
         mSmoothingBar.setProgress(sharedPref.getInt("mSmoothing", 50));
 
-        mDistanceScale = LineUtils.map((float) mLineDistanceScaleBar.getProgress(), 0, 100, 1, 200, true);
-        mLineWidthMax = LineUtils.map((float) mLineWidthBar.getProgress(), 0f, 100f, 0.1f, 5f, true);
-        mLineSmoothing = LineUtils.map((float) mSmoothingBar.getProgress(), 0, 100, 0.01f, 0.2f, true);
+        distanceScale = LineUtils.map((float) mLineDistanceScaleBar.getProgress(), 0, 100, 1, 200, true);
+        lineWidth = LineUtils.map((float) mLineWidthBar.getProgress(), 0f, 100f, 0.1f, 5f, true);
+        lineSmoothing = LineUtils.map((float) mSmoothingBar.getProgress(), 0, 100, 0.01f, 0.2f, true);
 
         SeekBar.OnSeekBarChangeListener seekBarChangeListener = new SeekBar.OnSeekBarChangeListener() {
             /**
@@ -164,15 +162,15 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
 
                 if (seekBar == mLineDistanceScaleBar) {
                     editor.putInt("mLineDistanceScale", progress);
-                    mDistanceScale = LineUtils.map((float) progress, 0f, 100f, 1f, 200f, true);
+                    distanceScale = LineUtils.map((float) progress, 0f, 100f, 1f, 200f, true);
                 } else if (seekBar == mLineWidthBar) {
                     editor.putInt("mLineWidth", progress);
-                    mLineWidthMax = LineUtils.map((float) progress, 0f, 100f, 0.1f, 5f, true);
+                    lineWidth = LineUtils.map((float) progress, 0f, 100f, 0.1f, 5f, true);
                 } else if (seekBar == mSmoothingBar) {
                     editor.putInt("mSmoothing", progress);
-                    mLineSmoothing = LineUtils.map((float) progress, 0, 100, 0.01f, 0.2f, true);
+                    lineSmoothing = LineUtils.map((float) progress, 0, 100, 0.01f, 0.2f, true);
                 }
-                mLineShaderRenderer.bNeedsUpdate.set(true);
+                lineShaderRenderer.bNeedsUpdate.set(true);
 
                 editor.apply();
 
@@ -194,25 +192,25 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
         // Hide the settings ui
         mSettingsUI.setVisibility(View.GONE);
 
-        mDisplayRotationHelper = new DisplayRotationHelper(/*context=*/ this);
+        displayRotationHelper = new DisplayRotationHelper(/*context=*/ this);
         // Reset the zero matrix
-        Matrix.setIdentityM(mZeroMatrix, 0);
+        Matrix.setIdentityM(zeroMatrix, 0);
 
-        mLastPoint = new Vector3f(0, 0, 0);
+        lastPoint = new Vector3f(0, 0, 0);
 
-        bInstallRequested = false;
+        installRequested = false;
 
         // Set up renderer.
-        mSurfaceView.setPreserveEGLContextOnPause(true);
-        mSurfaceView.setEGLContextClientVersion(2);
-        mSurfaceView.setEGLConfigChooser(8, 8, 8, 8, 16, 0); // Alpha used for plane blending.
-        mSurfaceView.setRenderer(this);
-        mSurfaceView.setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
+        surfaceView.setPreserveEGLContextOnPause(true);
+        surfaceView.setEGLContextClientVersion(2);
+        surfaceView.setEGLConfigChooser(8, 8, 8, 8, 16, 0); // Alpha used for plane blending.
+        surfaceView.setRenderer(this);
+        surfaceView.setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
 
         // Setup touch detector
-        mDetector = new GestureDetectorCompat(this, this);
-        mDetector.setOnDoubleTapListener(this);
-        mStrokes = new ArrayList<>();
+        gestureDetector = new GestureDetectorCompat(this, this);
+        gestureDetector.setOnDoubleTapListener(this);
+        strokes = new ArrayList<>();
 
 
     }
@@ -224,7 +222,7 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
      * @param touchPoint a 2D point in screen space and is projected into 3D world space
      */
     private void addStroke(Vector2f touchPoint) {
-        Vector3f newPoint = LineUtils.GetWorldCoords(touchPoint, mScreenWidth, mScreenHeight, projmtx, viewmtx);
+        Vector3f newPoint = LineUtils.GetWorldCoords(touchPoint, screenWidth, screenHeight, projectionMatrix, viewMatrix);
         addStroke(newPoint);
     }
 
@@ -235,7 +233,7 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
      * @param touchPoint a 2D point in screen space and is projected into 3D world space
      */
     private void addPoint(Vector2f touchPoint) {
-        Vector3f newPoint = LineUtils.GetWorldCoords(touchPoint, mScreenWidth, mScreenHeight, projmtx, viewmtx);
+        Vector3f newPoint = LineUtils.GetWorldCoords(touchPoint, screenWidth, screenHeight, projectionMatrix, viewMatrix);
         addPoint(newPoint);
     }
 
@@ -246,14 +244,14 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
      * @param newPoint a 3D point in world space
      */
     private void addStroke(Vector3f newPoint) {
-        biquadFilter = new BiquadFilter(mLineSmoothing);
+        biquadFilter = new BiquadFilter(lineSmoothing);
         for (int i = 0; i < 1500; i++) {
             biquadFilter.update(newPoint);
         }
         Vector3f p = biquadFilter.update(newPoint);
-        mLastPoint = new Vector3f(p);
-        mStrokes.add(new ArrayList<Vector3f>());
-        mStrokes.get(mStrokes.size() - 1).add(mLastPoint);
+        lastPoint = new Vector3f(p);
+        strokes.add(new ArrayList<Vector3f>());
+        strokes.get(strokes.size() - 1).add(lastPoint);
     }
 
     /**
@@ -262,10 +260,10 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
      * @param newPoint a 3D point in world space
      */
     private void addPoint(Vector3f newPoint) {
-        if (LineUtils.distanceCheck(newPoint, mLastPoint)) {
+        if (LineUtils.distanceCheck(newPoint, lastPoint)) {
             Vector3f p = biquadFilter.update(newPoint);
-            mLastPoint = new Vector3f(p);
-            mStrokes.get(mStrokes.size() - 1).add(mLastPoint);
+            lastPoint = new Vector3f(p);
+            strokes.get(strokes.size() - 1).add(lastPoint);
         }
     }
 
@@ -277,13 +275,13 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
     protected void onResume() {
         super.onResume();
 
-        if (mSession == null) {
+        if (session == null) {
             Exception exception = null;
             String message = null;
             try {
-                switch (ArCoreApk.getInstance().requestInstall(this, !bInstallRequested)) {
+                switch (ArCoreApk.getInstance().requestInstall(this, !installRequested)) {
                     case INSTALL_REQUESTED:
-                        bInstallRequested = true;
+                        installRequested = true;
                         return;
                     case INSTALLED:
                         break;
@@ -296,7 +294,7 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
                     return;
                 }
 
-                mSession = new Session(/* context= */ this);
+                session = new Session(/* context= */ this);
             } catch (UnavailableArcoreNotInstalledException
                     | UnavailableUserDeclinedInstallationException e) {
                 message = "Please install ARCore";
@@ -318,17 +316,21 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
             }
 
             // Create default config and check if supported.
-            Config config = new Config(mSession);
-            if (!mSession.isSupported(config)) {
+            Config config = new Config(session);
+            if (!session.isSupported(config)) {
                 Log.e(TAG, "Exception creating session Device Does Not Support ARCore", exception);
             }
-            mSession.configure(config);
+            session.configure(config);
         }
         // Note that order matters - see the note in onPause(), the reverse applies here.
-        mSession.resume();
-        mSurfaceView.onResume();
-        mDisplayRotationHelper.onResume();
-        mPaused = false;
+        try {
+            session.resume();
+        } catch (CameraNotAvailableException e) {
+            e.printStackTrace();
+        }
+        surfaceView.onResume();
+        displayRotationHelper.onResume();
+        isPaused = false;
     }
 
     /**
@@ -339,21 +341,21 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
         super.onPause();
         // Note that the order matters - GLSurfaceView is paused first so that it does not try
         // to query the session. If Session is paused before GLSurfaceView, GLSurfaceView may
-        // still call mSession.update() and get a SessionPausedException.
+        // still call session.update() and get a SessionPausedException.
 
-        if (mSession != null) {
-            mDisplayRotationHelper.onPause();
-            mSurfaceView.onPause();
-            mSession.pause();
+        if (session != null) {
+            displayRotationHelper.onPause();
+            surfaceView.onPause();
+            session.pause();
         }
 
-        mPaused = false;
+        isPaused = false;
 
 
         DisplayMetrics displayMetrics = new DisplayMetrics();
         getWindowManager().getDefaultDisplay().getMetrics(displayMetrics);
-        mScreenHeight = displayMetrics.heightPixels;
-        mScreenWidth = displayMetrics.widthPixels;
+        screenHeight = displayMetrics.heightPixels;
+        screenWidth = displayMetrics.widthPixels;
     }
 
 
@@ -389,19 +391,19 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
     @Override
     public void onSurfaceCreated(GL10 gl, EGLConfig config) {
 
-        if (mSession == null) {
+        if (session == null) {
             return;
         }
 
         GLES20.glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
 
         // Create the texture and pass it to ARCore session to be filled during update().
-        mBackgroundRenderer.createOnGlThread(/*context=*/this);
+        backgroundRenderer.createOnGlThread(/*context=*/this);
 
         try {
 
-            mSession.setCameraTextureName(mBackgroundRenderer.getTextureId());
-            mLineShaderRenderer.createOnGlThread(this);
+            session.setCameraTextureName(backgroundRenderer.getTextureId());
+            lineShaderRenderer.createOnGlThread(this);
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -414,9 +416,9 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
         GLES20.glViewport(0, 0, width, height);
         // Notify ARCore session that the view size changed so that the perspective matrix and
         // the video background can be properly adjusted.
-        mDisplayRotationHelper.onSurfaceChanged(width, height);
-        mScreenWidth = width;
-        mScreenHeight = height;
+        displayRotationHelper.onSurfaceChanged(width, height);
+        screenWidth = width;
+        screenHeight = height;
     }
 
 
@@ -431,88 +433,88 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
      */
     private void update() {
 
-        if (mSession == null) {
+        if (session == null) {
             return;
         }
 
-        mDisplayRotationHelper.updateSessionIfNeeded(mSession);
+        displayRotationHelper.updateSessionIfNeeded(session);
 
         try {
 
-            mSession.setCameraTextureName(mBackgroundRenderer.getTextureId());
+            session.setCameraTextureName(backgroundRenderer.getTextureId());
 
-            mFrame = mSession.update();
-            Camera camera = mFrame.getCamera();
+            frame = session.update();
+            Camera camera = frame.getCamera();
 
-            mState = camera.getTrackingState();
+            trackingState = camera.getTrackingState();
 
             // Update tracking states
-            if (mState == TrackingState.TRACKING && !bIsTracking.get()) {
-                bIsTracking.set(true);
-            } else if (mState== TrackingState.STOPPED && bIsTracking.get()) {
-                bIsTracking.set(false);
-                bTouchDown.set(false);
+            if (trackingState == TrackingState.TRACKING && !isTracking.get()) {
+                isTracking.set(true);
+            } else if (trackingState == TrackingState.STOPPED && isTracking.get()) {
+                isTracking.set(false);
+                isTouchDown.set(false);
             }
 
             // Get projection matrix.
-            camera.getProjectionMatrix(projmtx, 0, AppSettings.getNearClip(), AppSettings.getFarClip());
-            camera.getViewMatrix(viewmtx, 0);
+            camera.getProjectionMatrix(projectionMatrix, 0, AppSettings.getNearClip(), AppSettings.getFarClip());
+            camera.getViewMatrix(viewMatrix, 0);
 
             float[] position = new float[3];
             camera.getPose().getTranslation(position, 0);
 
             // Check if camera has moved much, if thats the case, stop touchDown events
             // (stop drawing lines abruptly through the air)
-            if (mLastFramePosition != null) {
+            if (lastFramePosition != null) {
                 Vector3f distance = new Vector3f(position[0], position[1], position[2]);
-                distance.sub(new Vector3f(mLastFramePosition[0], mLastFramePosition[1], mLastFramePosition[2]));
+                distance.sub(new Vector3f(lastFramePosition[0], lastFramePosition[1], lastFramePosition[2]));
 
                 if (distance.length() > 0.15) {
-                    bTouchDown.set(false);
+                    isTouchDown.set(false);
                 }
             }
-            mLastFramePosition = position;
+            lastFramePosition = position;
 
             // Multiply the zero matrix
-            Matrix.multiplyMM(viewmtx, 0, viewmtx, 0, mZeroMatrix, 0);
+            Matrix.multiplyMM(viewMatrix, 0, viewMatrix, 0, zeroMatrix, 0);
 
 
-            if (bNewStroke.get()) {
-                bNewStroke.set(false);
+            if (newStroke.get()) {
+                newStroke.set(false);
                 addStroke(lastTouch.get());
-                mLineShaderRenderer.bNeedsUpdate.set(true);
-            } else if (bTouchDown.get()) {
+                lineShaderRenderer.bNeedsUpdate.set(true);
+            } else if (isTouchDown.get()) {
                 addPoint(lastTouch.get());
-                mLineShaderRenderer.bNeedsUpdate.set(true);
+                lineShaderRenderer.bNeedsUpdate.set(true);
             }
 
-            if (bReCenterView.get()) {
-                bReCenterView.set(false);
-                mZeroMatrix = getCalibrationMatrix();
+            if (recenterView.get()) {
+                recenterView.set(false);
+                zeroMatrix = getCalibrationMatrix();
             }
 
-            if (bClearDrawing.get()) {
-                bClearDrawing.set(false);
+            if (shouldClearDrawing.get()) {
+                shouldClearDrawing.set(false);
                 clearDrawing();
-                mLineShaderRenderer.bNeedsUpdate.set(true);
+                lineShaderRenderer.bNeedsUpdate.set(true);
             }
 
-            if (bUndo.get()) {
-                bUndo.set(false);
-                if (mStrokes.size() > 0) {
-                    mStrokes.remove(mStrokes.size() - 1);
-                    mLineShaderRenderer.bNeedsUpdate.set(true);
+            if (undo.get()) {
+                undo.set(false);
+                if (strokes.size() > 0) {
+                    strokes.remove(strokes.size() - 1);
+                    lineShaderRenderer.bNeedsUpdate.set(true);
                 }
             }
-            mLineShaderRenderer.setDrawDebug(bLineParameters.get());
-            if (mLineShaderRenderer.bNeedsUpdate.get()) {
-                mLineShaderRenderer.setColor(AppSettings.getColor());
-                mLineShaderRenderer.mDrawDistance = AppSettings.getStrokeDrawDistance();
-                mLineShaderRenderer.setDistanceScale(mDistanceScale);
-                mLineShaderRenderer.setLineWidth(mLineWidthMax);
-                mLineShaderRenderer.clear();
-                mLineShaderRenderer.updateStrokes(mStrokes);
-                mLineShaderRenderer.upload();
+            lineShaderRenderer.setDrawDebug(lineParameters.get());
+            if (lineShaderRenderer.bNeedsUpdate.get()) {
+                lineShaderRenderer.setColor(AppSettings.getColor());
+                lineShaderRenderer.mDrawDistance = AppSettings.getStrokeDrawDistance();
+                lineShaderRenderer.setDistanceScale(distanceScale);
+                lineShaderRenderer.setLineWidth(lineWidth);
+                lineShaderRenderer.clear();
+                lineShaderRenderer.updateStrokes(strokes);
+                lineShaderRenderer.upload();
             }
 
         } catch (Exception e) {
@@ -530,22 +532,22 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
      */
     @Override
     public void onDrawFrame(GL10 gl) {
-        if (mPaused) return;
+        if (isPaused) return;
 
         update();
 
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
 
-        if (mFrame == null) {
+        if (frame == null) {
             return;
         }
 
         // Draw background.
-        mBackgroundRenderer.draw(mFrame);
+        backgroundRenderer.draw(frame);
 
         // Draw Lines
-        if (mFrame.getCamera().getTrackingState() == TrackingState.TRACKING) {
-            mLineShaderRenderer.draw(viewmtx, projmtx, mScreenWidth, mScreenHeight, AppSettings.getNearClip(), AppSettings.getFarClip());
+        if (frame.getCamera().getTrackingState() == TrackingState.TRACKING) {
+            lineShaderRenderer.draw(viewMatrix, projectionMatrix, screenWidth, screenHeight, AppSettings.getNearClip(), AppSettings.getFarClip());
         }
     }
 
@@ -557,8 +559,8 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
         float[] t = new float[3];
         float[] m = new float[16];
 
-        mFrame.getCamera().getPose().getTranslation(t, 0);
-        float[] z = mFrame.getCamera().getPose().getZAxis();
+        frame.getCamera().getPose().getTranslation(t, 0);
+        float[] z = frame.getCamera().getPose().getZAxis();
         Vector3f zAxis = new Vector3f(z[0], z[1], z[2]);
         zAxis.y = 0;
         zAxis.normalize();
@@ -577,17 +579,17 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
      * Designed to be executed on the GL Thread
      */
     public void clearDrawing() {
-        mStrokes.clear();
-        mLineShaderRenderer.clear();
+        strokes.clear();
+        lineShaderRenderer.clear();
     }
 
 
     /**
-     * onClickUndo handles the touch input on the GUI and sets the AtomicBoolean bUndo to be true
+     * onClickUndo handles the touch input on the GUI and sets the AtomicBoolean undo to be true
      * the actual undo functionality is executed in the GL Thread
      */
     public void onClickUndo(View button) {
-        bUndo.set(true);
+        undo.set(true);
     }
 
     /**
@@ -595,7 +597,7 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
      * highlight the lines on the same depth plane to allow users to draw things more coherently
      */
     public void onClickLineDebug(View button) {
-        bLineParameters.set(!bLineParameters.get());
+        lineParameters.set(!lineParameters.get());
     }
 
 
@@ -629,7 +631,7 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
         builder.setPositiveButton("Clear ", new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface dialog, int which) {
-                bClearDrawing.set(true);
+                shouldClearDrawing.set(true);
             }
         });
         builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
@@ -648,30 +650,30 @@ public class DrawAR extends AppCompatActivity implements GLSurfaceView.Renderer,
      * the actual recenter functionality is executed on the GL Thread
      */
     public void onClickRecenter(View button) {
-        bReCenterView.set(true);
+        recenterView.set(true);
     }
 
     // ------- Touch events
 
     /**
-     * onTouchEvent handles saving the lastTouch screen position and setting bTouchDown and bNewStroke
+     * onTouchEvent handles saving the lastTouch screen position and setting isTouchDown and newStroke
      * AtomicBooleans to trigger addPoint and addStroke on the GL Thread to be called
      */
     @Override
     public boolean onTouchEvent(MotionEvent tap) {
-        this.mDetector.onTouchEvent(tap);
+        this.gestureDetector.onTouchEvent(tap);
 
         if (tap.getAction() == MotionEvent.ACTION_DOWN ) {
             lastTouch.set(new Vector2f(tap.getX(), tap.getY()));
-            bTouchDown.set(true);
-            bNewStroke.set(true);
+            isTouchDown.set(true);
+            newStroke.set(true);
             return true;
         } else if (tap.getAction() == MotionEvent.ACTION_MOVE || tap.getAction() == MotionEvent.ACTION_POINTER_DOWN) {
             lastTouch.set(new Vector2f(tap.getX(), tap.getY()));
-            bTouchDown.set(true);
+            isTouchDown.set(true);
             return true;
         } else if (tap.getAction() == MotionEvent.ACTION_UP || tap.getAction() == MotionEvent.ACTION_CANCEL) {
-            bTouchDown.set(false);
+            isTouchDown.set(false);
             lastTouch.set(new Vector2f(tap.getX(), tap.getY()));
             return true;
         }
